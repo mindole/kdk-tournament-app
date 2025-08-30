@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# 가상환경
+.venv/
+venv/
+env/
+
+# OS / IDE
+.DS_Store
+.idea/
+.vscode/
+
+# Streamlit / 로컬 DB / 임시파일
+.streamlit/secrets.toml
+kdk_share.db
+*.sqlite
+*.db
+uploads/
+tmp/
