@@ -5,6 +5,7 @@ from typing import List, Dict, Tuple, Optional
 import pandas as pd
 import random
 import sqlite3, json, secrets, time
+import io
 from pathlib import Path
 from contextlib import contextmanager
 
@@ -657,11 +658,97 @@ def render_tournament():
         st.markdown(f"<div class='table-wrap'>{styled_table_html(df, font_px=15)}</div>", unsafe_allow_html=True)
         st.markdown("</div>", unsafe_allow_html=True)
 
+
         # CSV 다운로드 (UTF-8 권장 / Windows용 CP949)
-        csv_utf8 = df.to_csv(index=False).encode("utf-8-sig")
-        st.download_button("⬇️ 성적표 CSV (UTF-8 권장)", data=csv_utf8, file_name="standings_utf8.csv", mime="text/csv")
-        csv_cp949 = df.to_csv(index=False).encode("cp949", errors="replace")
-        st.download_button("⬇️ 성적표 CSV (Windows 엑셀용)", data=csv_cp949, file_name="standings_cp949.csv", mime="text/csv")
+        #csv_utf8 = df.to_csv(index=False).encode("utf-8-sig")
+        #st.download_button("⬇️ 성적표 CSV ", data=csv_utf8, file_name="standings_utf8.csv", mime="text/csv")
+        #csv_cp949 = df.to_csv(index=False).encode("cp949", errors="replace")
+        #st.download_button("⬇️ 성적표 CSV (Windows 엑셀용)", data=csv_cp949, file_name="standings_cp949.csv", mime="text/csv")
+        # --- 기존 전체 성적표 df (df 변수) 이미 만들어진 상태라고 가정 ---
+
+        def build_round_detail_df(state: TourState) -> pd.DataFrame:
+            """각 선수별로 라운드별 출전/스코어/결과를 행 단위로 정리."""
+            rows = []
+            total_rounds = len(state.rounds)
+            for r_idx, rd in enumerate(state.rounds, start=1):
+                for m_idx, m in enumerate(rd.matches, start=1):
+                    # 팀 구성
+                    a1, a2 = m.team_a
+                    b1, b2 = m.team_b
+                    sa = m.score_a if m.score_a is not None else None
+                    sb = m.score_b if m.score_b is not None else None
+
+                    # 한 매치에서 4명 각각 한 행씩 기록
+                    # 팀 A 시점
+                    for p, partner in [(a1, a2), (a2, a1)]:
+                        rows.append({
+                            "라운드": r_idx,                            
+                            "선수": state.players[p],
+                            "파트너": state.players[partner],
+                            "상대팀": f"{state.players[b1]} & {state.players[b2]}",
+                            "득점(우리)": sa if sa is not None else "",
+                            "실점(상대)": sb if sb is not None else "",
+                            "결과": ("승" if (sa is not None and sb is not None and sa > sb) else
+                                ("패" if (sa is not None and sb is not None and sa < sb) else "")),
+                            "승점": (1 if (sa is not None and sb is not None and sa > sb) else 0)
+                        })
+                    # 팀 B 시점
+                    for p, partner in [(b1, b2), (b2, b1)]:
+                        rows.append({
+                            "라운드": r_idx,
+                            "선수": state.players[p],
+                            "파트너": state.players[partner],
+                            "상대팀": f"{state.players[a1]} & {state.players[a2]}",
+                            "득점(우리)": sb if sb is not None else "",
+                            "실점(상대)": sa if sa is not None else "",
+                            "결과": ("승" if (sa is not None and sb is not None and sb > sa) else
+                                ("패" if (sa is not None and sb is not None and sb < sa) else "")),
+                            "승점": (1 if (sa is not None and sb is not None and sb > sa) else 0)
+                        })
+            df_detail = pd.DataFrame(rows)
+            # 보기 좋게 정렬: 선수 이름, 라운드, 매치
+            if not df_detail.empty:
+                df_detail = df_detail.sort_values(["선수", "라운드"], ignore_index=True)
+            return df_detail
+        
+        df_detail = build_round_detail_df(tour)
+
+        # ✅ 엑셀(멀티시트)로 내보내기
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
+            df.to_excel(writer, index=False, sheet_name="전체순위")
+            df_detail.to_excel(writer, index=False, sheet_name="선수별 성적표")
+
+            # 약간의 포맷(헤더 bold, 컬럼폭 자동)
+            wb = writer.book
+            header_fmt = wb.add_format({"bold": True, "bg_color": "#DCFCE7", "font_color": "#065F46", "border": 1})
+            border_fmt = wb.add_format({"border": 1})
+
+            for sheet_name in ["전체순위", "선수별 성적표"]:
+                ws = writer.sheets[sheet_name]
+                # 헤더 스타일
+                ws.set_row(0, None, header_fmt)
+                # 컬럼폭 자동(간단 추정)
+                df_src = df if sheet_name == "전체순위" else df_detail
+                # 빈 데이터프레임일 수도 있으니 방어
+                if not df_src.empty:
+                    for col_idx, col in enumerate(df_src.columns):
+                        max_len = max([len(str(col))] + [len(str(v)) for v in df_src[col].head(200).tolist()])
+                        ws.set_column(col_idx, col_idx, min(max_len + 2, 40), border_fmt)
+                else:
+                    # 빈 시트라도 기본 폭 정도는 지정
+                    ws.set_column(0, 0, 12, border_fmt)
+        # ✅ 여기서 writer가 정상 종료/flush됨
+        output.seek(0)  # 버퍼 맨 앞으로 이동 (중요)        
+
+        # 다운로드 버튼 (XLSX 한 개 파일)
+        st.download_button(
+            "⬇️ 성적표 + 라운드내역 (Excel: 2시트)",
+            data=output.getvalue(),
+            file_name="kdk_results.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+
 
 # =========================
 # Router
