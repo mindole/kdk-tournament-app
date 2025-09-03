@@ -462,12 +462,27 @@ def render_setup():
         tour.assignment_mode = "random" if "랜덤" in assignment_mode else "fixed"
         seed_val = st.number_input("Seed (같은 Seed=같은 배치)", min_value=0, value=0, step=1) if tour.assignment_mode == "random" else None
 
-        # 선수 입력
+        # 선수 입력 (모바일에서도 1→N 순서 유지)
         default_names = tour.players or [f"Player {i+1}" for i in range(tour.num_players)]
-        cols = st.columns(4); entered = []
-        for i in range(tour.num_players):
-            with cols[i % 4]:
-                entered.append(st.text_input(f"선수 {i+1}", value=default_names[i] if i < len(default_names) else f"Player {i+1}"))
+
+        entered = []
+        per_row = 4  # PC에서는 4열 그리드, 모바일에서는 자동으로 세로로 스택
+
+        for r in range(0, tour.num_players, per_row):
+            row_cols = st.columns(per_row)
+            for j in range(per_row):
+                idx = r + j
+                if idx >= tour.num_players:
+                    break
+                with row_cols[j]:
+                    entered.append(
+                        st.text_input(
+                            f"선수 {idx+1}",
+                            value=default_names[idx] if idx < len(default_names) else f"Player {idx+1}",
+                            key=f"player_{idx}"  # 안정적인 키
+                        )
+                    )
+
 
         if st.button("✅ 대진 생성", type="primary", disabled=st.session_state.view_only):
             tour.players = [n.strip() or f"Player {i+1}" for i, n in enumerate(entered)]
