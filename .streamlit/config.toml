@@ -1,0 +1,7 @@
+[theme]
+base = "light"                          # 라이트 테마 고정
+primaryColor = "#2EA043"                # 버튼 그린
+backgroundColor = "#F7FCF9"             # 전체 배경(밝은 코트)
+secondaryBackgroundColor = "#FFFFFF"    # ★ 위젯/박스 바탕 (검은 바 원인 제거)
+textColor = "#0F172A"                   # 본문 글자
+font = "sans serif"
