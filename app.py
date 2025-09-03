@@ -432,7 +432,7 @@ def render_setup():
     with st.sidebar:
         st.markdown("### 🙌 토너먼트 참여하기")
         join_code = st.text_input("참여 코드 (4자리 숫자)", max_chars=4, placeholder="예) 0427")
-        join_secret = st.text_input("비밀키 (선택)", type="password", placeholder="")
+        join_secret = st.text_input("비밀키 (수정모드로 참여할때 입력)", type="password", placeholder="")
         if st.button("참여"):
             code = (join_code or "").strip()
             if len(code) == 4 and code.isdigit():
